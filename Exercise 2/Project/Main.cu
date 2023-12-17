@@ -5,9 +5,9 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define BUFFER  1048576
-#define SEGMENT 4096
-#define STREAM  true
+#define BUFFER 1048576
+#define STRIDE 262144
+#define STREAM true
 
 __global__ void gpuVectorAdd(float* bufferIn1, float* bufferIn2, float* bufferOut, int bufferSize)
 {
@@ -33,35 +33,33 @@ void VectorAdd(float* cpuBufferIn1, float* cpuBufferIn2, float* cpuBufferOut, fl
 
 	cudaDeviceSynchronize();
 
-	cudaMemcpy(cpuBufferOut, gpuBufferOut, BUFFER * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(cpuBufferOut, gpuBufferOut, BUFFER * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
 void VectorAdd(float* cpuBufferIn1, float* cpuBufferIn2, float* cpuBufferOut, float* gpuBufferIn1, float* gpuBufferIn2, float* gpuBufferOut, cudaStream_t* stream)
 {
-	int stride = BUFFER / 4;
-
-	cudaMemcpyAsync(&gpuBufferIn1[0 * stride], &cpuBufferIn1[0 * stride], stride * sizeof(float), cudaMemcpyHostToDevice, stream[0]);
-	cudaMemcpyAsync(&gpuBufferIn1[1 * stride], &cpuBufferIn1[1 * stride], stride * sizeof(float), cudaMemcpyHostToDevice, stream[1]);
-	cudaMemcpyAsync(&gpuBufferIn1[2 * stride], &cpuBufferIn1[2 * stride], stride * sizeof(float), cudaMemcpyHostToDevice, stream[2]);
-	cudaMemcpyAsync(&gpuBufferIn1[3 * stride], &cpuBufferIn1[3 * stride], stride * sizeof(float), cudaMemcpyHostToDevice, stream[3]);
-
-	cudaMemcpyAsync(&gpuBufferIn2[0 * stride], &cpuBufferIn2[0 * stride], stride * sizeof(float), cudaMemcpyHostToDevice, stream[0]);
-	cudaMemcpyAsync(&gpuBufferIn2[1 * stride], &cpuBufferIn2[1 * stride], stride * sizeof(float), cudaMemcpyHostToDevice, stream[1]);
-	cudaMemcpyAsync(&gpuBufferIn2[2 * stride], &cpuBufferIn2[2 * stride], stride * sizeof(float), cudaMemcpyHostToDevice, stream[2]);
-	cudaMemcpyAsync(&gpuBufferIn2[3 * stride], &cpuBufferIn2[3 * stride], stride * sizeof(float), cudaMemcpyHostToDevice, stream[3]);
-
 	int threads = 64;
-	int blocks  = (stride + threads - 1) / threads;
+	int blocks  = (STRIDE + threads - 1) / threads;
 
-	gpuVectorAdd<<<blocks, threads>>>(gpuBufferIn1, gpuBufferIn2, gpuBufferOut, BUFFER, 0 * stride);
-	gpuVectorAdd<<<blocks, threads>>>(gpuBufferIn1, gpuBufferIn2, gpuBufferOut, BUFFER, 1 * stride);
-	gpuVectorAdd<<<blocks, threads>>>(gpuBufferIn1, gpuBufferIn2, gpuBufferOut, BUFFER, 2 * stride);
-	gpuVectorAdd<<<blocks, threads>>>(gpuBufferIn1, gpuBufferIn2, gpuBufferOut, BUFFER, 3 * stride);
+	for (int i = 0; i != BUFFER / STRIDE; ++i)
+	{
+		cudaMemcpyAsync(&gpuBufferIn1[i * STRIDE], &cpuBufferIn1[i * STRIDE], STRIDE * sizeof(float), cudaMemcpyHostToDevice, stream[i % 4]);
+	}
 
-	cudaMemcpyAsync(&cpuBufferOut[0 * stride], &gpuBufferOut[0 * stride], stride * sizeof(float), cudaMemcpyDeviceToHost, stream[0]);
-	cudaMemcpyAsync(&cpuBufferOut[1 * stride], &gpuBufferOut[1 * stride], stride * sizeof(float), cudaMemcpyDeviceToHost, stream[1]);
-	cudaMemcpyAsync(&cpuBufferOut[2 * stride], &gpuBufferOut[2 * stride], stride * sizeof(float), cudaMemcpyDeviceToHost, stream[2]);
-	cudaMemcpyAsync(&cpuBufferOut[3 * stride], &gpuBufferOut[3 * stride], stride * sizeof(float), cudaMemcpyDeviceToHost, stream[3]);
+	for (int i = 0; i != BUFFER / STRIDE; ++i)
+	{
+		cudaMemcpyAsync(&gpuBufferIn2[i * STRIDE], &cpuBufferIn2[i * STRIDE], STRIDE * sizeof(float), cudaMemcpyHostToDevice, stream[i % 4]);
+	}
+
+	for (int i = 0; i != BUFFER / STRIDE; ++i)
+	{
+		gpuVectorAdd<<<blocks, threads>>>(gpuBufferIn1, gpuBufferIn2, gpuBufferOut, BUFFER, i * STRIDE);
+	}
+
+	for (int i = 0; i != BUFFER / STRIDE; ++i)
+	{
+		cudaMemcpyAsync(&cpuBufferOut[i * STRIDE], &gpuBufferOut[i * STRIDE], STRIDE * sizeof(float), cudaMemcpyDeviceToHost, stream[i % 4]);
+	}
 
 	cudaDeviceSynchronize();
 }
