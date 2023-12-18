@@ -134,7 +134,7 @@ int main(int argc, char** argv)
 		cudaMemPrefetchAsync(temp, dimX * sizeof(double), cudaCpuDeviceId);
 		cudaMemPrefetchAsync(A, nzv * sizeof(double), cudaCpuDeviceId);
 		cudaMemPrefetchAsync(ARowPtr, (dimX + 1) * sizeof(int), cudaCpuDeviceId);
-		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(double), cudaCpuDeviceId);
+		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(int), cudaCpuDeviceId);
 		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), cudaCpuDeviceId);
 		cputimer_stop("Prefetching GPU memory to the host");
 	}
@@ -158,7 +158,7 @@ int main(int argc, char** argv)
 		cudaMemPrefetchAsync(temp, dimX * sizeof(double), 0);
 		cudaMemPrefetchAsync(A, nzv * sizeof(double), 0);
 		cudaMemPrefetchAsync(ARowPtr, (dimX + 1) * sizeof(int), 0);
-		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(double), 0);
+		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(int), 0);
 		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), 0);
 		cputimer_stop("Prefetching GPU memory to the device");
 	}
