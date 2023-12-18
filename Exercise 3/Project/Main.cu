@@ -101,7 +101,9 @@ int main(int argc, char** argv)
 	double tempRight = 300.;   // Right heat source applied to the rod
 	cublasHandle_t cublasHandle;      // cuBLAS handle
 	cusparseHandle_t cusparseHandle;  // cuSPARSE handle
-	cusparseMatDescr_t Adescriptor;   // Mat descriptor needed by cuSPARSE
+	cusparseSpMatDescr_t Adescriptor;   // Mat descriptor needed by cuSPARSE
+	cusparseDnVecDescr_t Tdescriptor; // TODO: Rename.
+	cusparseDnVecDescr_t Ydescriptor; // TODO: Rename.
 
 	// Read the arguments from the command line
 	dimX = atoi(argv[1]);
@@ -170,27 +172,33 @@ int main(int argc, char** argv)
 	cusparseCreate(&cusparseHandle);
 
 	//@@ Insert code to set the cuBLAS pointer mode to CUSPARSE_POINTER_MODE_HOST
-	//cublasSetPointerMode_v2(cublasHandle, (cublasPointerMode_t)CUSPARSE_POINTER_MODE_HOST);
+	cublasSetPointerMode_v2(cublasHandle, (cublasPointerMode_t)CUSPARSE_POINTER_MODE_HOST);
 
 	//@@ Insert code to call cusparse api to create the mat descriptor used by cuSPARSE
-	//cusparseCreateMatDescr(&Adescriptor);
+	cusparseCreateCsr(&Adescriptor, dimX, dimX, nzv, ARowPtr, AColIndx, A, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, CUDA_R_64F);
+	cusparseCreateDnVec(&Tdescriptor, dimX, temp, CUDA_R_64F);
+	cusparseCreateDnVec(&Ydescriptor, dimX, tmp, CUDA_R_64F);
 
 	//@@ Insert code to call cusparse api to get the buffer size needed by the sparse matrix per vector (SMPV) CSR routine of cuSPARSE
-	//cusparseEstim
+	cusparseSpMV_bufferSize(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, &one, Adescriptor, Tdescriptor, &zero, Ydescriptor, CUDA_R_64F, CUSPARSE_SPMV_ALG_DEFAULT, &bufferSize);
 
 	//@@ Insert code to allocate the buffer needed by cuSPARSE
+	cudaMalloc(&buffer, bufferSize);
 
 	// Perform the time step iterations
 	for (int it = 0; it < nsteps; ++it) {
 		//@@ Insert code to call cusparse api to compute the SMPV (sparse matrix multiplication) for
 		//@@ the CSR matrix using cuSPARSE. This calculation corresponds to:
 		//@@ tmp = 1 * A * temp + 0 * tmp
+		cusparseSpMV(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, &one, Adescriptor, Tdescriptor, &zero, Ydescriptor, CUDA_R_64F, CUSPARSE_SPMV_ALG_DEFAULT, buffer);
 
 		//@@ Insert code to call cublas api to compute the axpy routine using cuBLAS.
 		//@@ This calculation corresponds to: temp = alpha * tmp + temp
+		cublasDaxpy_v2(cublasHandle, dimX, &alpha, tmp, 1, temp, 1);
 
 		//@@ Insert code to call cublas api to compute the norm of the vector using cuBLAS
 		//@@ This calculation corresponds to: ||temp||
+		cublasDnrm2_v2(cublasHandle, dimX, temp, 1, &norm);
 
 		// If the norm of A*temp is smaller than 10^-4 exit the loop
 		if (norm < 1e-4)
@@ -199,28 +207,32 @@ int main(int argc, char** argv)
 
 	// Calculate the exact solution using thrust
 	thrust::device_ptr<double> thrustPtr(tmp);
-	thrust::sequence(thrustPtr, thrustPtr + dimX, tempLeft,
-		(tempRight - tempLeft) / (dimX - 1));
+	thrust::sequence(thrustPtr, thrustPtr + dimX, tempLeft, (tempRight - tempLeft) / (dimX - 1));
 
 	// Calculate the relative approximation error:
 	one = -1;
 	//@@ Insert the code to call cublas api to compute the difference between the exact solution
 	//@@ and the approximation
 	//@@ This calculation corresponds to: tmp = -temp + tmp
+	cublasDaxpy_v2(cublasHandle, dimX, &one, temp, 1, tmp, 1);
 
 	//@@ Insert the code to call cublas api to compute the norm of the absolute error
 	//@@ This calculation corresponds to: || tmp ||
+	cublasDnrm2_v2(cublasHandle, dimX, tmp, 1, &norm);
 
 	error = norm;
 	//@@ Insert the code to call cublas api to compute the norm of temp
 	//@@ This calculation corresponds to: || temp ||
+	cublasDnrm2_v2(cublasHandle, dimX, temp, 1, &norm);
 
 	// Calculate the relative error
 	error = error / norm;
 	printf("The relative error of the approximation is %f\n", error);
 
 	//@@ Insert the code to destroy the mat descriptor
-	//cusparseDestroyMatDescr(Adescriptor);
+	cusparseDestroySpMat(Adescriptor);
+	cusparseDestroyDnVec(Tdescriptor);
+	cusparseDestroyDnVec(Ydescriptor);
 
 	//@@ Insert the code to destroy the cuSPARSE handle
 	cusparseDestroy(cusparseHandle);
@@ -234,6 +246,7 @@ int main(int argc, char** argv)
 	cudaFree(ARowPtr);
 	cudaFree(AColIndx);
 	cudaFree(tmp);
+	cudaFree(buffer);
 
 	return 0;
 }
