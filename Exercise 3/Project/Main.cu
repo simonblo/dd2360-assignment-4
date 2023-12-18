@@ -1,4 +1,5 @@
-﻿#include <cublas_v2.h>
+﻿// TODO
+#include <cublas_v2.h>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <cusparse_v2.h>
@@ -87,36 +88,30 @@ void matrixInit(double* A, int* ArowPtr, int* AcolIndx, int dimX, double alpha)
 
 int main(int argc, char** argv)
 {
-	// TODO.
-
-	int device = 0;            // Device to be used
-	int dimX;                  // Dimension of the metal rod
-	int nsteps;                // Number of time steps to perform
-	double alpha = 0.4;        // Diffusion coefficient
-	double* temp;              // Array to store the final time step
-	double* A;                 // Sparse matrix A values in the CSR format
-	int* ARowPtr;              // Sparse matrix A row pointers in the CSR format
-	int* AColIndx;              // Sparse matrix A col values in the CSR format
-	int nzv;                   // Number of non zero values in the sparse matrix
-	double* tmp;               // Temporal array of dimX for computations
-	size_t bufferSize = 0;     // Buffer size needed by some routines
-	void* buffer = nullptr;    // Buffer used by some routines in the libraries
-	int concurrentAccessQ;     // Check if concurrent access flag is set
-	double zero = 0;           // Zero constant
-	double one = 1;            // One constant
-	double norm;               // Variable for norm values
-	double error;              // Variable for storing the relative error
-	double tempLeft = 200.;    // Left heat source applied to the rod
-	double tempRight = 300.;   // Right heat source applied to the rod
-	cublasHandle_t cublasHandle;      // cuBLAS handle
-	cusparseHandle_t cusparseHandle;  // cuSPARSE handle
-	cusparseSpMatDescr_t Adescriptor;   // Mat descriptor needed by cuSPARSE
-	cusparseDnVecDescr_t Tdescriptor; // TODO: Rename.
-	cusparseDnVecDescr_t Ydescriptor; // TODO: Rename.
-
-
-
-
+	int device = 0;                  // Device to be used.
+	int dimX;                        // Dimension of the metal rod.
+	int nsteps;                      // Number of time steps to perform.
+	double alpha = 0.4;              // Diffusion coefficient.
+	double* temp;                    // Array to store the final time step.
+	double* tmp;                     // Array to store temporary computations.
+	double* A;                       // Sparse matrix A values in the CSR format.
+	int* ARowPtr;                    // Sparse matrix A row pointers in the CSR format.
+	int* AColIndx;                   // Sparse matrix A col values in the CSR format.
+	int nzv;                         // Number of non zero values in the sparse matrix.
+	void* buffer = nullptr;          // Buffer used by some routines in cuSPARSE.
+	size_t bufferSize = 0;           // Buffer size used by some routines in cuSPARSE.
+	int concurrentAccessQ;           // Flag for hardware support of concurrent access.
+	double zero = 0;                 // Constant for value zero.
+	double one = 1;                  // Constant for value one.
+	double norm;                     // Variable for norm values.
+	double error;                    // Variable for error values.
+	double tempLeft = 200.0;         // Heat source applied to the rod from the left.
+	double tempRight = 300.0;        // Heat source applied to the rod from the right.
+	cublasHandle_t cublasHandle;     // Handle to cuBLAS.
+	cusparseHandle_t cusparseHandle; // Handle tp cuSPARSE.
+	cusparseSpMatDescr_t descA;      // Matrix descriptor needed by cuSPARSE.
+	cusparseDnVecDescr_t descTemp;   // Vector descriptor needed by cuSPARSE.
+	cusparseDnVecDescr_t descTmp;    // Vector descriptor needed by cuSPARSE.
 
 	// Read the arguments from the command line.
 	dimX   = atoi(argv[1]);
@@ -187,12 +182,12 @@ int main(int argc, char** argv)
 	cublasSetPointerMode_v2(cublasHandle, (cublasPointerMode_t)CUSPARSE_POINTER_MODE_HOST);
 
 	// Create the sparse matrix descriptor and the dense vector descriptors used by cuSPARSE.
-	cusparseCreateCsr(&Adescriptor, dimX, dimX, nzv, ARowPtr, AColIndx, A, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, CUDA_R_64F);
-	cusparseCreateDnVec(&Tdescriptor, dimX, temp, CUDA_R_64F);
-	cusparseCreateDnVec(&Ydescriptor, dimX, tmp, CUDA_R_64F);
+	cusparseCreateCsr(&descA, dimX, dimX, nzv, ARowPtr, AColIndx, A, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, CUDA_R_64F);
+	cusparseCreateDnVec(&descTemp, dimX, temp, CUDA_R_64F);
+	cusparseCreateDnVec(&descTmp, dimX, tmp, CUDA_R_64F);
 
 	// Get the buffer size needed by the sparse matrix vector (SpMV) CSR routine of cuSPARSE.
-	cusparseSpMV_bufferSize(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, &one, Adescriptor, Tdescriptor, &zero, Ydescriptor, CUDA_R_64F, CUSPARSE_SPMV_ALG_DEFAULT, &bufferSize);
+	cusparseSpMV_bufferSize(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, &one, descA, descTemp, &zero, descTmp, CUDA_R_64F, CUSPARSE_SPMV_ALG_DEFAULT, &bufferSize);
 
 	// Allocate the working buffer needed by cuSPARSE.
 	cudaMalloc(&buffer, bufferSize);
@@ -201,7 +196,7 @@ int main(int argc, char** argv)
 	for (int i = 0; i != nsteps; ++i)
 	{
 		// Calculate the sparse matrix vector (SpMV) routine corresponding to tmp = 1 * A * temp + 0 * tmp.
-		cusparseSpMV(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, &one, Adescriptor, Tdescriptor, &zero, Ydescriptor, CUDA_R_64F, CUSPARSE_SPMV_ALG_DEFAULT, buffer);
+		cusparseSpMV(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, &one, descA, descTemp, &zero, descTmp, CUDA_R_64F, CUSPARSE_SPMV_ALG_DEFAULT, buffer);
 
 		// Calculate the dense vector scalar (Daxpy) routine corresponding to temp = alpha * tmp + temp.
 		cublasDaxpy_v2(cublasHandle, dimX, &alpha, tmp, 1, temp, 1);
@@ -233,9 +228,9 @@ int main(int argc, char** argv)
 	printf("The relative error of the approximation is %f\n", error);
 
 	// Destroy the sparse matrix descriptor and the dense vector descriptor used by cuSPARSE.
-	cusparseDestroySpMat(Adescriptor);
-	cusparseDestroyDnVec(Tdescriptor);
-	cusparseDestroyDnVec(Ydescriptor);
+	cusparseDestroySpMat(descA);
+	cusparseDestroyDnVec(descTemp);
+	cusparseDestroyDnVec(descTmp);
 
 	// Destroy the cuSPARSE handle and the cuBLAS handle.
 	cusparseDestroy(cusparseHandle);
