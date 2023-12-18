@@ -1,15 +1,7 @@
-﻿// TODO
-#include <cublas_v2.h>
-#include <cuda.h>
-#include <cuda_runtime_api.h>
+﻿#include <cublas_v2.h>
 #include <cusparse_v2.h>
-#include <device_launch_parameters.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <thrust/device_ptr.h>
 #include <thrust/sequence.h>
-#include <time.h>
 
 #define gpuCheck(statement)                                        \
 {                                                                  \
@@ -92,11 +84,11 @@ int main(int argc, char** argv)
 	int dimX;                        // Dimension of the metal rod.
 	int nsteps;                      // Number of time steps to perform.
 	double alpha = 0.4;              // Diffusion coefficient.
-	double* temp;                    // Array to store the final time step.
-	double* tmp;                     // Array to store temporary computations.
-	double* A;                       // Sparse matrix A values in the CSR format.
-	int* ARowPtr;                    // Sparse matrix A row pointers in the CSR format.
-	int* AColIndx;                   // Sparse matrix A col values in the CSR format.
+	double* temp = nullptr;          // Array to store the final time step.
+	double* tmp = nullptr;           // Array to store temporary computations.
+	double* A = nullptr;             // Sparse matrix A values in the CSR format.
+	int* ARowPtr = nullptr;          // Sparse matrix A row pointers in the CSR format.
+	int* AColIdx = nullptr;          // Sparse matrix A col values in the CSR format.
 	int nzv;                         // Number of non zero values in the sparse matrix.
 	void* buffer = nullptr;          // Buffer used by some routines in cuSPARSE.
 	size_t bufferSize = 0;           // Buffer size used by some routines in cuSPARSE.
@@ -130,10 +122,11 @@ int main(int argc, char** argv)
 	// Allocate the temp, tmp and the sparse matrix arrays using Unified Memory.
 	cpuTimerStart();
 	gpuCheck(cudaMallocManaged((void**)&temp, dimX * sizeof(double)));
+	gpuCheck(cudaMallocManaged((void**)&tmp, dimX * sizeof(double)));
 	gpuCheck(cudaMallocManaged((void**)&A, nzv * sizeof(double)));
 	gpuCheck(cudaMallocManaged((void**)&ARowPtr, (dimX + 1) * sizeof(int)));
-	gpuCheck(cudaMallocManaged((void**)&AColIndx, nzv * sizeof(int)));
-	gpuCheck(cudaMallocManaged((void**)&tmp, dimX * sizeof(double)));
+	gpuCheck(cudaMallocManaged((void**)&AColIdx, nzv * sizeof(int)));
+	
 	cpuTimerStop("Allocating device memory");
 
 	// Check if concurrentAccessQ is non zero in order to prefetch memory.
@@ -142,16 +135,16 @@ int main(int argc, char** argv)
 		// Prefetch in Unified Memory asynchronously to the CPU.
 		cpuTimerStart();
 		cudaMemPrefetchAsync(temp, dimX * sizeof(double), cudaCpuDeviceId);
+		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), cudaCpuDeviceId);
 		cudaMemPrefetchAsync(A, nzv * sizeof(double), cudaCpuDeviceId);
 		cudaMemPrefetchAsync(ARowPtr, (dimX + 1) * sizeof(int), cudaCpuDeviceId);
-		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(int), cudaCpuDeviceId);
-		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), cudaCpuDeviceId); 
+		cudaMemPrefetchAsync(AColIdx, nzv * sizeof(int), cudaCpuDeviceId);
 		cpuTimerStop("Prefetching GPU memory to the host");
 	}
 
 	// Initialize the sparse matrix.
 	cpuTimerStart();
-	matrixInit(A, ARowPtr, AColIndx, dimX, alpha);
+	matrixInit(A, ARowPtr, AColIdx, dimX, alpha);
 	cpuTimerStop("Initializing the sparse matrix on the host");
 
 	// Initiliaze the boundary conditions for the heat equation.
@@ -167,10 +160,10 @@ int main(int argc, char** argv)
 		// Prefetch in Unified Memory asynchronously to the GPU.
 		cpuTimerStart();
 		cudaMemPrefetchAsync(temp, dimX * sizeof(double), device);
+		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), device);
 		cudaMemPrefetchAsync(A, nzv * sizeof(double), device);
 		cudaMemPrefetchAsync(ARowPtr, (dimX + 1) * sizeof(int), device);
-		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(int), device);
-		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), device);
+		cudaMemPrefetchAsync(AColIdx, nzv * sizeof(int), device);
 		cpuTimerStop("Prefetching GPU memory to the device");
 	}
 
@@ -182,7 +175,7 @@ int main(int argc, char** argv)
 	cublasSetPointerMode_v2(cublasHandle, (cublasPointerMode_t)CUSPARSE_POINTER_MODE_HOST);
 
 	// Create the sparse matrix descriptor and the dense vector descriptors used by cuSPARSE.
-	cusparseCreateCsr(&descA, dimX, dimX, nzv, ARowPtr, AColIndx, A, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, CUDA_R_64F);
+	cusparseCreateCsr(&descA, dimX, dimX, nzv, ARowPtr, AColIdx, A, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, CUDA_R_64F);
 	cusparseCreateDnVec(&descTemp, dimX, temp, CUDA_R_64F);
 	cusparseCreateDnVec(&descTmp, dimX, tmp, CUDA_R_64F);
 
@@ -228,21 +221,21 @@ int main(int argc, char** argv)
 	printf("The relative error of the approximation is %f\n", error);
 
 	// Destroy the sparse matrix descriptor and the dense vector descriptor used by cuSPARSE.
-	cusparseDestroySpMat(descA);
-	cusparseDestroyDnVec(descTemp);
 	cusparseDestroyDnVec(descTmp);
+	cusparseDestroyDnVec(descTemp);
+	cusparseDestroySpMat(descA);
 
 	// Destroy the cuSPARSE handle and the cuBLAS handle.
 	cusparseDestroy(cusparseHandle);
 	cublasDestroy_v2(cublasHandle);
 
 	// Deallocate memory.
-	cudaFree(temp);
-	cudaFree(A);
-	cudaFree(ARowPtr);
-	cudaFree(AColIndx);
-	cudaFree(tmp);
 	cudaFree(buffer);
+	cudaFree(AColIdx);
+	cudaFree(ARowPtr);
+	cudaFree(A);
+	cudaFree(tmp);
+	cudaFree(temp);
 
 	return 0;
 }
