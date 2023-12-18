@@ -114,8 +114,7 @@ int main(int argc, char** argv)
 	// Get if the cudaDevAttrConcurrentManagedAccess flag is set
 	gpuCheck(cudaDeviceGetAttribute(&concurrentAccessQ, cudaDevAttrConcurrentManagedAccess, device));
 
-	// Calculate the number of non zero values in the sparse matrix. This number
-	// is known from the structure of the sparse matrix
+	// Calculate the number of non zero values in the sparse matrix. This number is known from the structure of the sparse matrix
 	nzv = 3 * dimX - 6;
 	
 	//@@ Insert the code to allocate the temp, tmp and the sparse matrix arrays using Unified Memory
@@ -128,10 +127,15 @@ int main(int argc, char** argv)
 	cputimer_stop("Allocating device memory");
 
 	// Check if concurrentAccessQ is non zero in order to prefetch memory
-	if (concurrentAccessQ) {
+	if (concurrentAccessQ)
+	{
 		//@@ Insert code to prefetch in Unified Memory asynchronously to CPU
 		cputimer_start();
-		// TODO
+		cudaMemPrefetchAsync(temp, dimX * sizeof(double), cudaCpuDeviceId);
+		cudaMemPrefetchAsync(A, nzv * sizeof(double), cudaCpuDeviceId);
+		cudaMemPrefetchAsync(ARowPtr, (dimX + 1) * sizeof(int), cudaCpuDeviceId);
+		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(double), cudaCpuDeviceId);
+		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), cudaCpuDeviceId);
 		cputimer_stop("Prefetching GPU memory to the host");
 	}
 
@@ -147,10 +151,15 @@ int main(int argc, char** argv)
 	temp[dimX - 1] = tempRight;
 	cputimer_stop("Initializing memory on the host");
 
-	if (concurrentAccessQ) {
-		cputimer_start();
+	if (concurrentAccessQ)
+	{
 		//@@ Insert code to prefetch in Unified Memory asynchronously to the GPU
-
+		cputimer_start();
+		cudaMemPrefetchAsync(temp, dimX * sizeof(double), 0);
+		cudaMemPrefetchAsync(A, nzv * sizeof(double), 0);
+		cudaMemPrefetchAsync(ARowPtr, (dimX + 1) * sizeof(int), 0);
+		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(double), 0);
+		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), 0);
 		cputimer_stop("Prefetching GPU memory to the device");
 	}
 
@@ -213,7 +222,6 @@ int main(int argc, char** argv)
 	//@@ Insert the code to destroy the cuSPARSE handle
 
 	//@@ Insert the code to destroy the cuBLAS handle
-
 
 	//@@ Insert the code for deallocating memory
 	cudaFree(temp);
