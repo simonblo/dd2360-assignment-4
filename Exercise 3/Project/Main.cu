@@ -52,36 +52,36 @@ void cpuTimerStop(const char* info)
 	printf("Timing - %s. Elapsed %.0f nanoseconds \n", info, time);
 }
 
-// Initialize the sparse matrix needed for the heat time step
+// Initialize the sparse matrix needed for the heat time step.
 void matrixInit(double* A, int* ArowPtr, int* AcolIndx, int dimX, double alpha)
 {
-	// Stencil from the finete difference discretization of the equation
+	// Stencil from the finete difference discretization of the equation.
 	double stencil[] = { 1, -2, 1 };
 
-	// Variable holding the position to insert a new element
+	// Variable holding the position to insert a new element.
 	size_t ptr = 0;
 
-	// Insert a row of zeros at the beginning of the matrix
+	// Insert a row of zeros at the beginning of the matrix.
 	ArowPtr[1] = ptr;
 
-	// Fill the non zero entries of the matrix
+	// Fill the non zero entries of the matrix.
 	for (int i = 1; i < (dimX - 1); ++i)
 	{
-		// Insert the elements: A[i][i-1], A[i][i], A[i][i+1]
+		// Insert the elements: A[i][i-1], A[i][i], A[i][i+1].
 		for (int k = 0; k < 3; ++k)
 		{
-			// Set the value for A[i][i+k-1]
+			// Set the value for A[i][i+k-1].
 			A[ptr] = stencil[k];
 
-			// Set the column index for A[i][i+k-1]
+			// Set the column index for A[i][i+k-1].
 			AcolIndx[ptr++] = i + k - 1;
 		}
 
-		// Set the number of newly added elements
+		// Set the number of newly added elements.
 		ArowPtr[i + 1] = ptr;
 	}
 
-	// Insert a row of zeros at the end of the matrix
+	// Insert a row of zeros at the end of the matrix.
 	ArowPtr[dimX] = ptr;
 }
 
@@ -197,26 +197,16 @@ int main(int argc, char** argv)
 	// Allocate the working buffer needed by cuSPARSE.
 	cudaMalloc(&buffer, bufferSize);
 
-
-
-
-
 	// Perform the time step iterations.
 	for (int i = 0; i != nsteps; ++i)
 	{
-		// TODO.
-
-		//@@ Insert code to call cusparse api to compute the SMPV (sparse matrix multiplication) for
-		//@@ the CSR matrix using cuSPARSE. This calculation corresponds to:
-		//@@ tmp = 1 * A * temp + 0 * tmp
+		// Calculate the sparse matrix vector (SpMV) routine corresponding to tmp = 1 * A * temp + 0 * tmp.
 		cusparseSpMV(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, &one, Adescriptor, Tdescriptor, &zero, Ydescriptor, CUDA_R_64F, CUSPARSE_SPMV_ALG_DEFAULT, buffer);
 
-		//@@ Insert code to call cublas api to compute the axpy routine using cuBLAS.
-		//@@ This calculation corresponds to: temp = alpha * tmp + temp
+		// Calculate the dense vector scalar (Daxpy) routine corresponding to temp = alpha * tmp + temp.
 		cublasDaxpy_v2(cublasHandle, dimX, &alpha, tmp, 1, temp, 1);
 
-		//@@ Insert code to call cublas api to compute the norm of the vector using cuBLAS
-		//@@ This calculation corresponds to: ||temp||
+		// Calculate the norm of the dense vector corresponding to norm = ||temp||.
 		cublasDnrm2_v2(cublasHandle, dimX, temp, 1, &norm);
 
 		// If the norm of A*temp is smaller than 10^-4 exit the loop.
@@ -227,26 +217,12 @@ int main(int argc, char** argv)
 	thrust::device_ptr<double> thrustPtr(tmp);
 	thrust::sequence(thrustPtr, thrustPtr + dimX, tempLeft, (tempRight - tempLeft) / (dimX - 1));
 
-
-
-
-
-	// TODO.
-
-	// Calculate the relative approximation error:
+	// Calculate the relative approximation error corresponding to tmp = -1 * temp + tmp.
 	one = -1;
-	//@@ Insert the code to call cublas api to compute the difference between the exact solution
-	//@@ and the approximation
-	//@@ This calculation corresponds to: tmp = -temp + tmp
 	cublasDaxpy_v2(cublasHandle, dimX, &one, temp, 1, tmp, 1);
 
-	//@@ Insert the code to call cublas api to compute the norm of the absolute error
-	//@@ This calculation corresponds to: || tmp ||
+	// Calculate the norm of the absolute error corresponding to norm = ||tmp||.
 	cublasDnrm2_v2(cublasHandle, dimX, tmp, 1, &norm);
-
-
-
-
 
 	// Calculate the norm of temp corresponding to ||temp||.
 	error = norm;
