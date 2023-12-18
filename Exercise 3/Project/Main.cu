@@ -10,47 +10,46 @@
 #include <thrust/sequence.h>
 #include <time.h>
 
-#define gpuCheck(stmt)                                               \
-  do {                                                               \
-      cudaError_t err = stmt;                                        \
-      if (err != cudaSuccess) {                                      \
-          printf("ERROR. Failed to run stmt %s\n", #stmt);           \
-          break;                                                     \
-      }                                                              \
-  } while (0)
-
-// Macro to check the cuBLAS status
-#define cublasCheck(stmt)                                            \
-  do {                                                               \
-      cublasStatus_t err = stmt;                                     \
-      if (err != CUBLAS_STATUS_SUCCESS) {                            \
-          printf("ERROR. Failed to run cuBLAS stmt %s\n", #stmt);    \
-          break;                                                     \
-      }                                                              \
-  } while (0)
-
-// Macro to check the cuSPARSE status
-#define cusparseCheck(stmt)                                          \
-  do {                                                               \
-      cusparseStatus_t err = stmt;                                   \
-      if (err != CUSPARSE_STATUS_SUCCESS) {                          \
-          printf("ERROR. Failed to run cuSPARSE stmt %s\n", #stmt);  \
-          break;                                                     \
-      }                                                              \
-  } while (0)
-
-struct timespec t_start, t_end;
-
-void cputimer_start()
-{
-	timespec_get(&t_start, TIME_UTC);
+#define gpuCheck(statement)                                        \
+{                                                                  \
+	cudaError_t error = statement;                                 \
+	if (error != cudaSuccess)                                      \
+	{                                                              \
+		printf("ERROR. Failed to run statement %s\n", #statement); \
+	}                                                              \
 }
 
-void cputimer_stop(const char* info)
+#define cublasCheck(statement)                                            \
+{                                                                         \
+	cublasStatus_t error = statement;                                     \
+	if (error != CUBLAS_STATUS_SUCCESS)                                   \
+	{                                                                     \
+		printf("ERROR. Failed to run cuBLAS statement %s\n", #statement); \
+	}                                                                     \
+}
+
+#define cusparseCheck(statement)                                       \
+{                                                                      \
+	cusparseStatus_t error = statement;                                \
+	if (error != CUSPARSE_STATUS_SUCCESS)                              \
+	{                                                                  \
+		printf("ERROR. Failed to run cuSPARSE stmt %s\n", #statement); \
+	}                                                                  \
+}
+
+struct timespec timerStart;
+struct timespec timerStop;
+
+void cpuTimerStart()
 {
-	timespec_get(&t_end, TIME_UTC);
-	double time = (1000000000.0 * (t_end.tv_sec - t_start.tv_sec) + t_end.tv_nsec - t_start.tv_nsec);
-	printf("Timing - %s. \t\tElapsed %.0f nanoseconds \n", info, time);
+	timespec_get(&timerStart, TIME_UTC);
+}
+
+void cpuTimerStop(const char* info)
+{
+	timespec_get(&timerStop, TIME_UTC);
+	double time = 1000000000.0 * (timerStop.tv_sec - timerStart.tv_sec) + (timerStop.tv_nsec - timerStart.tv_nsec);
+	printf("Timing - %s. Elapsed %.0f nanoseconds \n", info, time);
 }
 
 // Initialize the sparse matrix needed for the heat time step
@@ -58,28 +57,38 @@ void matrixInit(double* A, int* ArowPtr, int* AcolIndx, int dimX, double alpha)
 {
 	// Stencil from the finete difference discretization of the equation
 	double stencil[] = { 1, -2, 1 };
+
 	// Variable holding the position to insert a new element
 	size_t ptr = 0;
+
 	// Insert a row of zeros at the beginning of the matrix
 	ArowPtr[1] = ptr;
+
 	// Fill the non zero entries of the matrix
-	for (int i = 1; i < (dimX - 1); ++i) {
+	for (int i = 1; i < (dimX - 1); ++i)
+	{
 		// Insert the elements: A[i][i-1], A[i][i], A[i][i+1]
-		for (int k = 0; k < 3; ++k) {
+		for (int k = 0; k < 3; ++k)
+		{
 			// Set the value for A[i][i+k-1]
 			A[ptr] = stencil[k];
+
 			// Set the column index for A[i][i+k-1]
 			AcolIndx[ptr++] = i + k - 1;
 		}
+
 		// Set the number of newly added elements
 		ArowPtr[i + 1] = ptr;
 	}
+
 	// Insert a row of zeros at the end of the matrix
 	ArowPtr[dimX] = ptr;
 }
 
 int main(int argc, char** argv)
 {
+	// TODO.
+
 	int device = 0;            // Device to be used
 	int dimX;                  // Dimension of the metal rod
 	int nsteps;                // Number of time steps to perform
@@ -105,88 +114,98 @@ int main(int argc, char** argv)
 	cusparseDnVecDescr_t Tdescriptor; // TODO: Rename.
 	cusparseDnVecDescr_t Ydescriptor; // TODO: Rename.
 
-	// Read the arguments from the command line
-	dimX = atoi(argv[1]);
+
+
+
+
+	// Read the arguments from the command line.
+	dimX   = atoi(argv[1]);
 	nsteps = atoi(argv[2]);
 
-	// Print input arguments
-	printf("The X dimension of the grid is %d \n", dimX);
-	printf("The number of time steps to perform is %d \n", nsteps);
+	// Print input arguments.
+	printf("The X dimension of the grid is %d\n",         dimX);
+	printf("The number of time steps to perform is %d\n", nsteps);
 
-	// Get if the cudaDevAttrConcurrentManagedAccess flag is set
+	// Get if the cudaDevAttrConcurrentManagedAccess flag is set.
 	gpuCheck(cudaDeviceGetAttribute(&concurrentAccessQ, cudaDevAttrConcurrentManagedAccess, device));
 
-	// Calculate the number of non zero values in the sparse matrix. This number is known from the structure of the sparse matrix
+	// Calculate the number of non zero values in the sparse matrix. This number is known from the structure of the sparse matrix.
 	nzv = 3 * dimX - 6;
 	
-	//@@ Insert the code to allocate the temp, tmp and the sparse matrix arrays using Unified Memory
-	cputimer_start();
-	cudaMallocManaged((void**)&temp, dimX * sizeof(double));
-	cudaMallocManaged((void**)&A, nzv * sizeof(double));
-	cudaMallocManaged((void**)&ARowPtr, (dimX + 1) * sizeof(int));
-	cudaMallocManaged((void**)&AColIndx, nzv * sizeof(int));
-	cudaMallocManaged((void**)&tmp, dimX * sizeof(double));
-	cputimer_stop("Allocating device memory");
+	// Allocate the temp, tmp and the sparse matrix arrays using Unified Memory.
+	cpuTimerStart();
+	gpuCheck(cudaMallocManaged((void**)&temp, dimX * sizeof(double)));
+	gpuCheck(cudaMallocManaged((void**)&A, nzv * sizeof(double)));
+	gpuCheck(cudaMallocManaged((void**)&ARowPtr, (dimX + 1) * sizeof(int)));
+	gpuCheck(cudaMallocManaged((void**)&AColIndx, nzv * sizeof(int)));
+	gpuCheck(cudaMallocManaged((void**)&tmp, dimX * sizeof(double)));
+	cpuTimerStop("Allocating device memory");
 
-	// Check if concurrentAccessQ is non zero in order to prefetch memory
+	// Check if concurrentAccessQ is non zero in order to prefetch memory.
 	if (concurrentAccessQ)
 	{
-		//@@ Insert code to prefetch in Unified Memory asynchronously to CPU
-		cputimer_start();
-		cudaMemPrefetchAsync(temp, dimX * sizeof(double), cudaCpuDeviceId); // TODO: should this be removed?
+		// Prefetch in Unified Memory asynchronously to the CPU.
+		cpuTimerStart();
+		cudaMemPrefetchAsync(temp, dimX * sizeof(double), cudaCpuDeviceId);
 		cudaMemPrefetchAsync(A, nzv * sizeof(double), cudaCpuDeviceId);
 		cudaMemPrefetchAsync(ARowPtr, (dimX + 1) * sizeof(int), cudaCpuDeviceId);
 		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(int), cudaCpuDeviceId);
-		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), cudaCpuDeviceId); // TODO: should this be removed?
-		cputimer_stop("Prefetching GPU memory to the host");
+		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), cudaCpuDeviceId); 
+		cpuTimerStop("Prefetching GPU memory to the host");
 	}
 
-	// Initialize the sparse matrix
-	cputimer_start();
+	// Initialize the sparse matrix.
+	cpuTimerStart();
 	matrixInit(A, ARowPtr, AColIndx, dimX, alpha);
-	cputimer_stop("Initializing the sparse matrix on the host");
+	cpuTimerStop("Initializing the sparse matrix on the host");
 
-	//Initiliaze the boundary conditions for the heat equation
-	cputimer_start();
+	// Initiliaze the boundary conditions for the heat equation.
+	cpuTimerStart();
 	memset(temp, 0, sizeof(double) * dimX);
 	temp[0] = tempLeft;
 	temp[dimX - 1] = tempRight;
-	cputimer_stop("Initializing memory on the host");
+	cpuTimerStop("Initializing memory on the host");
 
+	// Check if concurrentAccessQ is non zero in order to prefetch memory.
 	if (concurrentAccessQ)
 	{
-		//@@ Insert code to prefetch in Unified Memory asynchronously to the GPU
-		cputimer_start();
-		cudaMemPrefetchAsync(temp, dimX * sizeof(double), 0); // TODO: should this be removed?
-		cudaMemPrefetchAsync(A, nzv * sizeof(double), 0);
-		cudaMemPrefetchAsync(ARowPtr, (dimX + 1) * sizeof(int), 0);
-		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(int), 0);
-		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), 0); // TODO: should this be removed?
-		cputimer_stop("Prefetching GPU memory to the device");
+		// Prefetch in Unified Memory asynchronously to the GPU.
+		cpuTimerStart();
+		cudaMemPrefetchAsync(temp, dimX * sizeof(double), device);
+		cudaMemPrefetchAsync(A, nzv * sizeof(double), device);
+		cudaMemPrefetchAsync(ARowPtr, (dimX + 1) * sizeof(int), device);
+		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(int), device);
+		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), device);
+		cpuTimerStop("Prefetching GPU memory to the device");
 	}
 
-	//@@ Insert code to create the cuBLAS handle
+	// Create the cuBLAS handle and the cuSPARSE handle.
 	cublasCreate_v2(&cublasHandle);
-
-	//@@ Insert code to create the cuSPARSE handle
 	cusparseCreate(&cusparseHandle);
 
-	//@@ Insert code to set the cuBLAS pointer mode to CUSPARSE_POINTER_MODE_HOST
+	// Set the cuBLAS pointer mode to CUSPARSE_POINTER_MODE_HOST.
 	cublasSetPointerMode_v2(cublasHandle, (cublasPointerMode_t)CUSPARSE_POINTER_MODE_HOST);
 
-	//@@ Insert code to call cusparse api to create the mat descriptor used by cuSPARSE
+	// Create the sparse matrix descriptor and the dense vector descriptors used by cuSPARSE.
 	cusparseCreateCsr(&Adescriptor, dimX, dimX, nzv, ARowPtr, AColIndx, A, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, CUDA_R_64F);
 	cusparseCreateDnVec(&Tdescriptor, dimX, temp, CUDA_R_64F);
 	cusparseCreateDnVec(&Ydescriptor, dimX, tmp, CUDA_R_64F);
 
-	//@@ Insert code to call cusparse api to get the buffer size needed by the sparse matrix per vector (SMPV) CSR routine of cuSPARSE
+	// Get the buffer size needed by the sparse matrix vector (SpMV) CSR routine of cuSPARSE.
 	cusparseSpMV_bufferSize(cusparseHandle, CUSPARSE_OPERATION_NON_TRANSPOSE, &one, Adescriptor, Tdescriptor, &zero, Ydescriptor, CUDA_R_64F, CUSPARSE_SPMV_ALG_DEFAULT, &bufferSize);
 
-	//@@ Insert code to allocate the buffer needed by cuSPARSE
+	// Allocate the working buffer needed by cuSPARSE.
 	cudaMalloc(&buffer, bufferSize);
 
-	// Perform the time step iterations
-	for (int it = 0; it < nsteps; ++it) {
+
+
+
+
+	// Perform the time step iterations.
+	for (int i = 0; i != nsteps; ++i)
+	{
+		// TODO.
+
 		//@@ Insert code to call cusparse api to compute the SMPV (sparse matrix multiplication) for
 		//@@ the CSR matrix using cuSPARSE. This calculation corresponds to:
 		//@@ tmp = 1 * A * temp + 0 * tmp
@@ -200,14 +219,19 @@ int main(int argc, char** argv)
 		//@@ This calculation corresponds to: ||temp||
 		cublasDnrm2_v2(cublasHandle, dimX, temp, 1, &norm);
 
-		// If the norm of A*temp is smaller than 10^-4 exit the loop
-		if (norm < 1e-4)
-			break;
+		// If the norm of A*temp is smaller than 10^-4 exit the loop.
+		if (norm < 1e-4) break;
 	}
 
-	// Calculate the exact solution using thrust
+	// Calculate the exact solution using thrust.
 	thrust::device_ptr<double> thrustPtr(tmp);
 	thrust::sequence(thrustPtr, thrustPtr + dimX, tempLeft, (tempRight - tempLeft) / (dimX - 1));
+
+
+
+
+
+	// TODO.
 
 	// Calculate the relative approximation error:
 	one = -1;
@@ -220,27 +244,28 @@ int main(int argc, char** argv)
 	//@@ This calculation corresponds to: || tmp ||
 	cublasDnrm2_v2(cublasHandle, dimX, tmp, 1, &norm);
 
+
+
+
+
+	// Calculate the norm of temp corresponding to ||temp||.
 	error = norm;
-	//@@ Insert the code to call cublas api to compute the norm of temp
-	//@@ This calculation corresponds to: || temp ||
 	cublasDnrm2_v2(cublasHandle, dimX, temp, 1, &norm);
 
-	// Calculate the relative error
+	// Calculate and print the relative error.
 	error = error / norm;
 	printf("The relative error of the approximation is %f\n", error);
 
-	//@@ Insert the code to destroy the mat descriptor
+	// Destroy the sparse matrix descriptor and the dense vector descriptor used by cuSPARSE.
 	cusparseDestroySpMat(Adescriptor);
 	cusparseDestroyDnVec(Tdescriptor);
 	cusparseDestroyDnVec(Ydescriptor);
 
-	//@@ Insert the code to destroy the cuSPARSE handle
+	// Destroy the cuSPARSE handle and the cuBLAS handle.
 	cusparseDestroy(cusparseHandle);
-
-	//@@ Insert the code to destroy the cuBLAS handle
 	cublasDestroy_v2(cublasHandle);
 
-	//@@ Insert the code for deallocating memory
+	// Deallocate memory.
 	cudaFree(temp);
 	cudaFree(A);
 	cudaFree(ARowPtr);
