@@ -131,11 +131,11 @@ int main(int argc, char** argv)
 	{
 		//@@ Insert code to prefetch in Unified Memory asynchronously to CPU
 		cputimer_start();
-		cudaMemPrefetchAsync(temp, dimX * sizeof(double), cudaCpuDeviceId);
+		cudaMemPrefetchAsync(temp, dimX * sizeof(double), cudaCpuDeviceId); // TODO: should this be removed?
 		cudaMemPrefetchAsync(A, nzv * sizeof(double), cudaCpuDeviceId);
 		cudaMemPrefetchAsync(ARowPtr, (dimX + 1) * sizeof(int), cudaCpuDeviceId);
 		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(int), cudaCpuDeviceId);
-		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), cudaCpuDeviceId);
+		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), cudaCpuDeviceId); // TODO: should this be removed?
 		cputimer_stop("Prefetching GPU memory to the host");
 	}
 
@@ -155,28 +155,30 @@ int main(int argc, char** argv)
 	{
 		//@@ Insert code to prefetch in Unified Memory asynchronously to the GPU
 		cputimer_start();
-		cudaMemPrefetchAsync(temp, dimX * sizeof(double), 0);
+		cudaMemPrefetchAsync(temp, dimX * sizeof(double), 0); // TODO: should this be removed?
 		cudaMemPrefetchAsync(A, nzv * sizeof(double), 0);
 		cudaMemPrefetchAsync(ARowPtr, (dimX + 1) * sizeof(int), 0);
 		cudaMemPrefetchAsync(AColIndx, nzv * sizeof(int), 0);
-		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), 0);
+		cudaMemPrefetchAsync(tmp, dimX * sizeof(double), 0); // TODO: should this be removed?
 		cputimer_stop("Prefetching GPU memory to the device");
 	}
 
 	//@@ Insert code to create the cuBLAS handle
+	cublasCreate_v2(&cublasHandle);
 
 	//@@ Insert code to create the cuSPARSE handle
+	cusparseCreate(&cusparseHandle);
 
 	//@@ Insert code to set the cuBLAS pointer mode to CUSPARSE_POINTER_MODE_HOST
+	//cublasSetPointerMode_v2(cublasHandle, (cublasPointerMode_t)CUSPARSE_POINTER_MODE_HOST);
 
 	//@@ Insert code to call cusparse api to create the mat descriptor used by cuSPARSE
+	//cusparseCreateMatDescr(&Adescriptor);
 
-	//@@ Insert code to call cusparse api to get the buffer size needed by the sparse matrix per
-	//@@ vector (SMPV) CSR routine of cuSPARSE
-
+	//@@ Insert code to call cusparse api to get the buffer size needed by the sparse matrix per vector (SMPV) CSR routine of cuSPARSE
+	//cusparseEstim
 
 	//@@ Insert code to allocate the buffer needed by cuSPARSE
-
 
 	// Perform the time step iterations
 	for (int it = 0; it < nsteps; ++it) {
@@ -218,10 +220,13 @@ int main(int argc, char** argv)
 	printf("The relative error of the approximation is %f\n", error);
 
 	//@@ Insert the code to destroy the mat descriptor
+	//cusparseDestroyMatDescr(Adescriptor);
 
 	//@@ Insert the code to destroy the cuSPARSE handle
+	cusparseDestroy(cusparseHandle);
 
 	//@@ Insert the code to destroy the cuBLAS handle
+	cublasDestroy_v2(cublasHandle);
 
 	//@@ Insert the code for deallocating memory
 	cudaFree(temp);
