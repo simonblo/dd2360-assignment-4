@@ -54,8 +54,8 @@ void cputimer_stop(const char* info)
 }
 
 // Initialize the sparse matrix needed for the heat time step
-void matrixInit(double* A, int* ArowPtr, int* AcolIndx, int dimX,
-	double alpha) {
+void matrixInit(double* A, int* ArowPtr, int* AcolIndx, int dimX, double alpha)
+{
 	// Stencil from the finete difference discretization of the equation
 	double stencil[] = { 1, -2, 1 };
 	// Variable holding the position to insert a new element
@@ -78,7 +78,8 @@ void matrixInit(double* A, int* ArowPtr, int* AcolIndx, int dimX,
 	ArowPtr[dimX] = ptr;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
 	int device = 0;            // Device to be used
 	int dimX;                  // Dimension of the metal rod
 	int nsteps;                // Number of time steps to perform
@@ -86,7 +87,7 @@ int main(int argc, char** argv) {
 	double* temp;              // Array to store the final time step
 	double* A;                 // Sparse matrix A values in the CSR format
 	int* ARowPtr;              // Sparse matrix A row pointers in the CSR format
-	int* AColIndx;             // Sparse matrix A col values in the CSR format
+	int* AColIndx;              // Sparse matrix A col values in the CSR format
 	int nzv;                   // Number of non zero values in the sparse matrix
 	double* tmp;               // Temporal array of dimX for computations
 	size_t bufferSize = 0;     // Buffer size needed by some routines
@@ -116,18 +117,21 @@ int main(int argc, char** argv) {
 	// Calculate the number of non zero values in the sparse matrix. This number
 	// is known from the structure of the sparse matrix
 	nzv = 3 * dimX - 6;
-
-	//@@ Insert the code to allocate the temp, tmp and the sparse matrix
-	//@@ arrays using Unified Memory
+	
+	//@@ Insert the code to allocate the temp, tmp and the sparse matrix arrays using Unified Memory
 	cputimer_start();
-
+	cudaMallocManaged((void**)&temp, dimX * sizeof(double));
+	cudaMallocManaged((void**)&A, nzv * sizeof(double));
+	cudaMallocManaged((void**)&ARowPtr, (dimX + 1) * sizeof(int));
+	cudaMallocManaged((void**)&AColIndx, nzv * sizeof(int));
+	cudaMallocManaged((void**)&tmp, dimX * sizeof(double));
 	cputimer_stop("Allocating device memory");
 
 	// Check if concurrentAccessQ is non zero in order to prefetch memory
 	if (concurrentAccessQ) {
-		cputimer_start();
 		//@@ Insert code to prefetch in Unified Memory asynchronously to CPU
-
+		cputimer_start();
+		// TODO
 		cputimer_stop("Prefetching GPU memory to the host");
 	}
 
@@ -212,8 +216,11 @@ int main(int argc, char** argv) {
 
 
 	//@@ Insert the code for deallocating memory
-
-
+	cudaFree(temp);
+	cudaFree(A);
+	cudaFree(ARowPtr);
+	cudaFree(AColIndx);
+	cudaFree(tmp);
 
 	return 0;
 }
