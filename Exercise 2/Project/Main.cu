@@ -5,8 +5,8 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define BUFFER 1048576
-#define STRIDE 262144
+#define BUFFER 8388608
+#define STRIDE 1048576
 #define STREAM true
 
 __global__ void gpuVectorAdd(float* bufferIn1, float* bufferIn2, float* bufferOut, int bufferSize)
@@ -23,16 +23,13 @@ __global__ void gpuVectorAdd(float* bufferIn1, float* bufferIn2, float* bufferOu
 
 void VectorAdd(float* cpuBufferIn1, float* cpuBufferIn2, float* cpuBufferOut, float* gpuBufferIn1, float* gpuBufferIn2, float* gpuBufferOut)
 {
-	cudaMemcpy(gpuBufferIn1, cpuBufferIn1, BUFFER * sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(gpuBufferIn2, cpuBufferIn2, BUFFER * sizeof(float), cudaMemcpyHostToDevice);
-
 	int threads = 64;
 	int blocks  = (BUFFER + threads - 1) / threads;
 
+	cudaMemcpy(gpuBufferIn1, cpuBufferIn1, BUFFER * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(gpuBufferIn2, cpuBufferIn2, BUFFER * sizeof(float), cudaMemcpyHostToDevice);
 	gpuVectorAdd<<<blocks, threads>>>(gpuBufferIn1, gpuBufferIn2, gpuBufferOut, BUFFER);
-
 	cudaDeviceSynchronize();
-
 	cudaMemcpy(cpuBufferOut, gpuBufferOut, BUFFER * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
@@ -41,23 +38,17 @@ void VectorAdd(float* cpuBufferIn1, float* cpuBufferIn2, float* cpuBufferOut, fl
 	int threads = 64;
 	int blocks  = (STRIDE + threads - 1) / threads;
 
+	// For some reason the first kernel launch takes a massive amount of CPU time which seems to
+	// scale with the input size. This slows everything down since the GPU manages to complete all
+	// memory transfers before the CPU manages to complete the first kernel launch which causes the
+	// GPU to sit idle. We can make a small "dummy" launch at the start to minimize this latency.
+	gpuVectorAdd<<<1, 32>>>(gpuBufferIn1, gpuBufferIn2, gpuBufferOut, 0, 0);
+
 	for (int i = 0; i != BUFFER / STRIDE; ++i)
 	{
 		cudaMemcpyAsync(&gpuBufferIn1[i * STRIDE], &cpuBufferIn1[i * STRIDE], STRIDE * sizeof(float), cudaMemcpyHostToDevice, stream[i % 4]);
-	}
-
-	for (int i = 0; i != BUFFER / STRIDE; ++i)
-	{
 		cudaMemcpyAsync(&gpuBufferIn2[i * STRIDE], &cpuBufferIn2[i * STRIDE], STRIDE * sizeof(float), cudaMemcpyHostToDevice, stream[i % 4]);
-	}
-
-	for (int i = 0; i != BUFFER / STRIDE; ++i)
-	{
-		gpuVectorAdd<<<blocks, threads>>>(gpuBufferIn1, gpuBufferIn2, gpuBufferOut, BUFFER, i * STRIDE);
-	}
-
-	for (int i = 0; i != BUFFER / STRIDE; ++i)
-	{
+		gpuVectorAdd<<<blocks, threads, 0, stream[i % 4]>>>(gpuBufferIn1, gpuBufferIn2, gpuBufferOut, BUFFER, i * STRIDE);
 		cudaMemcpyAsync(&cpuBufferOut[i * STRIDE], &gpuBufferOut[i * STRIDE], STRIDE * sizeof(float), cudaMemcpyDeviceToHost, stream[i % 4]);
 	}
 
