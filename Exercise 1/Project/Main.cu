@@ -8,7 +8,7 @@
 #define X 800
 #define Y 600
 
-__global__ void gpuProcessPicture(float* input, float* output, int x, int y)
+__global__ void KernelProcessPicture(float* input, float* output, int x, int y)
 {
 	uint2 tid;
 	tid.x = threadIdx.x + blockIdx.x * blockDim.x;
@@ -52,7 +52,7 @@ int main()
 	blocks.y = (Y + threads.y - 1) / threads.y;
 	blocks.z = 1;
 
-	gpuProcessPicture<<<blocks, threads>>>(gpuInput, gpuOutput, X, Y);
+	KernelProcessPicture<<<blocks, threads>>>(gpuInput, gpuOutput, X, Y);
 	cudaDeviceSynchronize();
 
 	cudaMemcpy(cpuOutput, gpuOutput, X * Y * sizeof(float), cudaMemcpyDeviceToHost);
