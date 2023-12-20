@@ -96,7 +96,7 @@ int main()
 	#if STREAM
 	VectorAdd(cpuInput1, cpuInput2, cpuOutput, gpuInput1, gpuInput2, gpuOutput, stream);
 	#else
-	VectorAdd(cpuBufferIn1, cpuBufferIn2, cpuBufferOut, gpuBufferIn1, gpuBufferIn2, gpuBufferOut);
+	VectorAdd(cpuInput1, cpuInput2, cpuOutput, gpuInput1, gpuInput2, gpuOutput);
 	#endif
 	double time1 = GetSeconds();
 
